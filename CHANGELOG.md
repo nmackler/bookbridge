@@ -56,6 +56,13 @@ All notable changes to BookBridge will be documented in this file.
   logs no longer expose the stream token. The 7.8.0 `:latest` image does not ship
   QuartzNet; that backend requires a newer `:dev` image or release.
 
+- **Forced alignment can read a mounted Audiobookshelf library in place (#455).**
+  If ABS's library folder is also mounted into BookBridge, set **Audiobookshelf
+  library path mapping** (`ABS_LOCAL_PATH_MAP`, e.g. `/audiobooks=/audiobooks`,
+  under Advanced — forced alignment model) and alignment reads each track where
+  it is instead of downloading a copy of the book first. Tracks it cannot find
+  there are downloaded as before.
+
 - **BridgeSync book downloads no longer time out on network-mounted libraries
   (#454).** Books whose ebook the bridge fetched from Audiobookshelf were looked
   for across the whole library twice before the bridge checked its own copy. On

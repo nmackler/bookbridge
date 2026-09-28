@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Optional
 
 from src.api.api_clients import ABSClient
@@ -64,6 +64,62 @@ def _series_label(series_name: str | None, series_index: str | int | float | Non
             return f"Book {idx}"
         return f"{name} #{idx}"
     return name
+
+
+def _abs_local_path_map() -> list[tuple[PurePosixPath, Path]]:
+    """Parse ``ABS_LOCAL_PATH_MAP``: ``ABS_PREFIX=LOCAL_PREFIX`` pairs separated by ``;``.
+
+    Each pair says where a folder of the Audiobookshelf server's library is mounted
+    in this container, e.g. ``/audiobooks=/audiobooks``. Longest ABS prefix first.
+    """
+    pairs = []
+    for entry in (os.environ.get("ABS_LOCAL_PATH_MAP") or "").replace("\n", ";").split(";"):
+        abs_prefix, sep, local_prefix = entry.partition("=")
+        abs_prefix, local_prefix = abs_prefix.strip(), local_prefix.strip()
+        if sep and abs_prefix.startswith("/") and local_prefix:
+            pairs.append((PurePosixPath(abs_prefix), Path(local_prefix)))
+    return sorted(pairs, key=lambda pair: len(pair[0].parts), reverse=True)
+
+
+def _map_abs_path(abs_path: str | None, path_map: list[tuple[PurePosixPath, Path]]) -> Path | None:
+    """Local, readable file for an ABS-side audio path, or None."""
+    if not abs_path:
+        return None
+    remote = PurePosixPath(abs_path)
+    for abs_prefix, local_prefix in path_map:
+        try:
+            relative = remote.relative_to(abs_prefix)
+        except ValueError:
+            continue
+        if ".." in relative.parts:
+            return None
+        candidate = local_prefix.joinpath(*relative.parts)
+        if candidate.is_file() and os.access(candidate, os.R_OK):
+            return candidate
+    return None
+
+
+def _apply_abs_local_path_map(files: list[dict], source_id: str) -> bool:
+    """Set ``local_path`` on ABS tracks found through ``ABS_LOCAL_PATH_MAP``.
+
+    Lets CTC read a mounted library in place instead of downloading every track.
+    Returns True only when every track resolved; tracks that did not resolve keep
+    their stream URL and go through the normal download path.
+    """
+    path_map = _abs_local_path_map()
+    if not path_map:
+        return False
+    for audio_file in files:
+        local_path = _map_abs_path(audio_file.get("abs_path"), path_map)
+        if local_path is not None:
+            audio_file["local_path"] = str(local_path)
+    mapped = sum(1 for audio_file in files if audio_file.get("local_path"))
+    if mapped < len(files):
+        logger.warning(
+            "ABS_LOCAL_PATH_MAP resolved %s of %s track(s) for item_id=%s; the rest are downloaded",
+            mapped, len(files), source_id,
+        )
+    return mapped == len(files)
 
 
 class AudioSourceAdapter:
@@ -242,6 +298,8 @@ class ABSAudioSourceAdapter(AudioSourceAdapter):
 
     def get_audio_files(self, source_id: str, bridge_key: str | None = None) -> list[dict]:
         files = [dict(audio_file) for audio_file in (self.abs_client.get_audio_files(source_id) or [])]
+        if files and _apply_abs_local_path_map(files, source_id):
+            return files  # every track read in place from the mounted library, nothing to download
         if not files or self.data_dir is None or not env_truthy("CTC_ENABLED"):
             return files
 
@@ -249,6 +307,8 @@ class ABSAudioSourceAdapter(AudioSourceAdapter):
         source_cache_dir = self.data_dir / "audio_cache" / cache_key / "source_tracks"
         source_cache_dir.mkdir(parents=True, exist_ok=True)
         for idx, audio_file in enumerate(files):
+            if audio_file.get("local_path"):
+                continue
             ext = str(audio_file.get("ext") or "mp3").lower().lstrip(".")
             if not ext.isalnum():
                 ext = "mp3"

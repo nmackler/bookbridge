@@ -3001,6 +3001,17 @@
                                 from Storyteller's package registry on first use; set it if that download fails.</div>
                         </div>
                         <div class="form-group">
+                            <label>Audiobookshelf library path mapping</label>
+                            <input type="text" name="ABS_LOCAL_PATH_MAP"
+                                value="{{ get_val('ABS_LOCAL_PATH_MAP', '') }}"
+                                placeholder="/audiobooks=/audiobooks" autocomplete="off">
+                            <div class="help-text">Optional. If Audiobookshelf's library folder is also mounted into
+                                BookBridge, forced alignment reads the audio files there instead of downloading a copy
+                                of each book first. Write <code>ABS path=BookBridge path</code>, e.g.
+                                <code>/audiobooks=/audiobooks</code>; separate several with <code>;</code>. Files it
+                                cannot find are downloaded as usual.</div>
+                        </div>
+                        <div class="form-group">
                             <label>CTC Device</label>
                             <select name="CTC_DEVICE">
                                 <option value="auto" {% if get_val('CTC_DEVICE')=='auto' %}selected{% endif %}>Auto

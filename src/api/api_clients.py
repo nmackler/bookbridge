@@ -300,10 +300,12 @@ class ABSClient:
 
                 for af in audio_files:
                     stream_url = f"{self.base_url}/api/items/{item_id}/file/{af['ino']}?token={self.token}"
-                    # Return dict with stream URL and extension (default to mp3)
+                    # Return dict with stream URL and extension (default to mp3), plus
+                    # the file's path on the ABS server (ABS_LOCAL_PATH_MAP reads it).
                     files.append({
                         "stream_url": stream_url,
-                        "ext": af.get("ext", "mp3")
+                        "ext": af.get("ext", "mp3"),
+                        "abs_path": (af.get("metadata") or {}).get("path"),
                     })
                 return files
             logger.warning(f"⚠️ ABS: Failed to fetch audio files for item '{item_id}' (status {r.status_code})")
